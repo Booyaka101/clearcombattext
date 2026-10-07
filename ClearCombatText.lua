@@ -34,7 +34,7 @@ end
 local TYPES = {
     SPELL_DAMAGE        = { color = { 1.00, 0.95, 0.55 }, size = 20 },
     SPELL_DAMAGE_CRIT   = { color = { 1.00, 0.62, 0.00 }, size = 28, crit = true },
-    SPELL_SPLIT_DAMAG   = { color = { 1.00, 0.95, 0.55 }, size = 18 },
+    SPELL_SPLIT_DAMAGE  = { color = { 1.00, 0.95, 0.55 }, size = 18 },
     DAMAGE              = { color = { 1.00, 1.00, 1.00 }, size = 18 },
     DAMAGE_CRIT         = { color = { 1.00, 0.82, 0.00 }, size = 26, crit = true },
     PERIODICAURA_DAMAGE = { color = { 0.80, 0.60, 1.00 }, size = 15, dim = true },
@@ -81,29 +81,37 @@ local TEXT_LABELS = {
 -- Incoming damage types (things that hit you) render on the left stream.
 local INCOMING = {
     DAMAGE = true, DAMAGE_CRIT = true, SPELL_DAMAGE = true, SPELL_DAMAGE_CRIT = true,
-    SPELL_SPLIT_DAMAG = true, PERIODICAURA_DAMAGE = true, MISS = true, DODGE = true,
+    SPELL_SPLIT_DAMAGE = true, PERIODICAURA_DAMAGE = true, MISS = true, DODGE = true,
     PARRY = true, EVADE = true, IMMUNE = true, AURA_START_HARMFUL = true,
 }
 
 -- ---------------------------------------------------------------------------
--- consolidation: repeats of the same type merge inside the window
--- "12 × 340" instead of twelve 340s machine-gunning over each other.
+-- consolidation: the first hit renders immediately; repeats inside the window
+-- update that same line in place ("340" grows into "1020 x3") and refresh its
+-- lifetime, so a burst reads as one living number instead of a queue delay.
+-- (defined after render, which it calls)
 
 local WINDOW = 0.45
-local pending = {}
+local pending
+local render -- forward-declared: consolidate calls it, defined below
 
 local function consolidate(now, mtype, amount)
     local p = pending[mtype]
-    if p and (now - p.t) <= WINDOW and amount then
+    if p and p.entry and not p.entry.done and (now - p.t) <= WINDOW and amount then
         p.n = p.n + 1
-        p.sum = p.sum + (tonumber(amount) or 0)
+        p.sum = p.sum + amount
         p.t = now
-        return nil -- swallowed; the visible line refreshes when it flushes
+        local text = BreakUpLargeNumbers(p.sum) .. " x" .. p.n
+        p.entry.fs:SetText(text)
+        p.entry.born = now
+        return
     end
     if amount then
-        pending[mtype] = { t = now, n = 1, sum = tonumber(amount) or 0 }
+        local entry = render(now, mtype, BreakUpLargeNumbers(amount))
+        if entry then
+            pending[mtype] = { t = now, n = 1, sum = amount, entry = entry }
+        end
     end
-    return amount
 end
 
 -- ---------------------------------------------------------------------------
@@ -148,21 +156,24 @@ end
 local LIFETIME = 1.9
 local RISE = 110
 
-local function render(now, mtype, text, opts)
+render = function(now, mtype, text, opts)
     opts = opts or TYPES[mtype] or { color = { 1, 1, 1 }, size = 18 }
     local incoming = INCOMING[mtype]
     local fs = acquire()
     fs:SetText(text)
     fs:SetTextColor(opts.color[1], opts.color[2], opts.color[3], opts.dim and 0.75 or 1)
-    local profile = "GameFontNormalHuge"
     local font, _, flags = fs:GetFont()
     if font then fs:SetFont(font, opts.size, flags) end
     local x = incoming and -180 or 180
     local stagger = math.random(-45, 45)
     fs:SetPoint("CENTER", anchor, "CENTER", x + stagger, 0)
     fs:Show()
-    active[#active + 1] = { fs = fs, born = now, size = opts.size, crit = opts.crit }
+    local entry = { fs = fs, born = now, size = opts.size, crit = opts.crit, done = false }
+    active[#active + 1] = entry
+    return entry
 end
+
+pending = {}
 
 local updater = CreateFrame("Frame")
 updater:SetScript("OnUpdate", function(self, elapsed)
@@ -171,6 +182,7 @@ updater:SetScript("OnUpdate", function(self, elapsed)
         local a = active[i]
         local age = now - a.born
         if age >= LIFETIME then
+            a.done = true
             release(a.fs)
             table.remove(active, i)
         else
@@ -186,16 +198,10 @@ updater:SetScript("OnUpdate", function(self, elapsed)
             end
         end
     end
-    -- flush consolidation windows
+    -- expired consolidation windows release their claim; the line itself fades
+    -- on its own refreshed lifetime
     for mtype, p in pairs(pending) do
         if (now - p.t) > WINDOW then
-            local text
-            if p.n > 1 then
-                text = string.format("%s x%d", BreakUpLargeNumbers(math.floor(p.sum / p.n + 0.5)), p.n)
-            else
-                text = BreakUpLargeNumbers(p.sum)
-            end
-            render(now, mtype, text)
             pending[mtype] = nil
         end
     end
@@ -269,6 +275,10 @@ SlashCmdList.CLEARCOMBATTEXT = function(msg)
             anchor:SetScript("OnDragStop", anchor.StopMovingOrSizing)
             print("ClearCombatText: drag the box, then |cff888888/cct anchor|r to lock.")
         end
+    elseif msg == "reset" then
+        anchor:ClearAllPoints()
+        anchor:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+        print("ClearCombatText: position reset.")
     elseif msg == "test" then
         local now = GetTime()
         render(now, "SPELL_DAMAGE_CRIT", "4,912")

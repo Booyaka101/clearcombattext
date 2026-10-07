@@ -62,6 +62,7 @@ function Frame:CreateFontString()
     fs.Show = function() SHOWN[#SHOWN + 1] = fs.text end
     return fs
 end
+function Frame:ClearAllPoints() self.points = {} end
 function Frame:StartMoving() end
 function Frame:StopMovingOrSizing() end
 

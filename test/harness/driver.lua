@@ -26,29 +26,45 @@ local banner = false
 for _, l in ipairs(OUT) do if l:find("ClearCombatText loaded", 1, true) then banner = true end end
 expect(banner, "login banner missing")
 
--- 2. full pipeline: pump COMBAT_TEXT_UPDATE events, advance time, run the updater
-EVENTS[#EVENTS + 1] = { data = 340 }
-mainFrame.scripts.OnEvent(mainFrame, "COMBAT_TEXT_UPDATE", "SPELL_DAMAGE")
-mainFrame.hooks.OnEvent(mainFrame, "COMBAT_TEXT_UPDATE", "SPELL_DAMAGE")
-CLOCK = CLOCK + 0.1
-EVENTS[#EVENTS + 1] = { data = 340 }
-mainFrame.scripts.OnEvent(mainFrame, "COMBAT_TEXT_UPDATE", "SPELL_DAMAGE")
-mainFrame.hooks.OnEvent(mainFrame, "COMBAT_TEXT_UPDATE", "SPELL_DAMAGE")
-CLOCK = CLOCK + 0.1
-EVENTS[#EVENTS + 1] = { data = 340 }
-mainFrame.scripts.OnEvent(mainFrame, "COMBAT_TEXT_UPDATE", "SPELL_DAMAGE")
-mainFrame.hooks.OnEvent(mainFrame, "COMBAT_TEXT_UPDATE", "SPELL_DAMAGE")
--- nothing rendered yet: all three consolidated inside the window
+-- 2. full pipeline: first hit renders IMMEDIATELY, repeats update in place,
+--    window expiry releases the claim without a delayed second render
+FONTSTRINGS = FONTSTRINGS or {}
+local origCFS = Frame.CreateFontString
+function Frame:CreateFontString()
+    local fs = origCFS(self)
+    FONTSTRINGS[#FONTSTRINGS + 1] = fs
+    return fs
+end
+
 SHOWN = {}
-CLOCK = CLOCK + 0.6
+EVENTS[#EVENTS + 1] = { data = 340 }
+mainFrame.scripts.OnEvent(mainFrame, "COMBAT_TEXT_UPDATE", "SPELL_DAMAGE")
+mainFrame.hooks.OnEvent(mainFrame, "COMBAT_TEXT_UPDATE", "SPELL_DAMAGE")
+expect(#SHOWN == 1 and SHOWN[1] == "340", "first hit did not render immediately: " .. table.concat(SHOWN, ","))
+
+CLOCK = CLOCK + 0.1
+EVENTS[#EVENTS + 1] = { data = 340 }
+mainFrame.hooks.OnEvent(mainFrame, "COMBAT_TEXT_UPDATE", "SPELL_DAMAGE")
+CLOCK = CLOCK + 0.1
+EVENTS[#EVENTS + 1] = { data = 340 }
+mainFrame.hooks.OnEvent(mainFrame, "COMBAT_TEXT_UPDATE", "SPELL_DAMAGE")
+expect(#SHOWN == 1, "repeats created new strings instead of updating in place: " .. #SHOWN)
+local grew = false
+for _, fs in ipairs(FONTSTRINGS) do
+    if fs.text == "1020 x3" then grew = true end
+end
+expect(grew, "in-place consolidation text never became '1020 x3'")
+
+-- window expires: pending clears, no extra render fires
 local updater
 for _, fr in ipairs(FRAMES) do
     if fr.scripts and fr.scripts.OnUpdate then updater = fr end
 end
 expect(updater, "updater frame never created")
+CLOCK = CLOCK + 0.6
+SHOWN = {}
 updater.scripts.OnUpdate(updater, 0.1)
-local flushed = table.concat(SHOWN, " ")
-expect(flushed:find("340 x3", 1, true), "consolidated flush missing, got: " .. flushed)
+expect(#SHOWN == 0, "window expiry rendered a duplicate: " .. table.concat(SHOWN, ","))
 
 -- 3. /cct test renders five strings
 SHOWN = {}

@@ -2,7 +2,7 @@
 ## Title: ClearCombatText
 ## Notes: Scrolling combat text that stays readable under the secret-value API: correct attribution, consolidation, crits you can see.
 ## Author: Booyaka101
-## Version: 0.1.0
+## Version: 0.2.0
 ## IconTexture: Interface/Icons/INV_Misc_Note_06
 ## X-Category: Combat
 ## X-Website: https://github.com/Booyaka101/clearcombattext
