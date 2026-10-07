@@ -114,6 +114,19 @@ expect(ClearCombatTextDB.anchor == nil, "reset did not clear the saved position"
 local _, _, _, nx, ny = anchorFrame:GetPoint()
 expect(nx == 0 and ny == 120, "reset did not restore the default position")
 
+-- 5c. anchor restores on login even without C_CombatText (Classic client)
+local savedSecrets = C_CombatText
+C_CombatText = nil
+anchorFrame:ClearAllPoints()
+anchorFrame:SetPoint("CENTER", UIParent, "CENTER", -50, 200)
+anchorFrame.scripts.OnDragStop()
+anchorFrame:ClearAllPoints()
+anchorFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+mainFrame.scripts.OnEvent(mainFrame, "PLAYER_LOGIN")
+local _, _, _, cx, cy = anchorFrame:GetPoint()
+expect(cx == -50 and cy == 200, "anchor did not restore on a C_CombatText-less client")
+C_CombatText = savedSecrets
+
 -- 6. /cct test renders five strings
 SHOWN = {}
 SlashCmdList.CLEARCOMBATTEXT("test")

@@ -244,9 +244,9 @@ f:RegisterEvent("UNIT_EXITING_VEHICLE")
 f:RegisterEvent("UNIT_PET")
 f:SetScript("OnEvent", function(self, event, unit)
     if event == "PLAYER_LOGIN" then
+        restoreAnchor() -- position restores even on clients without C_CombatText
         if C_CombatText == nil then return end
         bindUnit("player")
-        restoreAnchor()
         print("ClearCombatText loaded. |cff888888/cct test|r to preview, |cff888888/cct anchor|r to move.|r")
         return
     end
