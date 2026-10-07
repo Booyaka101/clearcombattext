@@ -1,0 +1,10 @@
+{
+  "name": "clearcombattext-tests",
+  "private": true,
+  "scripts": {
+    "test": "node test/harness/run.js"
+  },
+  "dependencies": {
+    "fengari": "^0.1.4"
+  }
+}
