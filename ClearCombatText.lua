@@ -161,6 +161,7 @@ render = function(now, mtype, text, opts)
     local incoming = INCOMING[mtype]
     local fs = acquire()
     fs:SetText(text)
+    fs:SetAlpha(1) -- pooled strings carry the tail of their last fade
     fs:SetTextColor(opts.color[1], opts.color[2], opts.color[3], opts.dim and 0.75 or 1)
     local font, _, flags = fs:GetFont()
     if font then fs:SetFont(font, opts.size, flags) end
@@ -212,6 +213,7 @@ end)
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("UNIT_EXITING_VEHICLE")
 f:RegisterEvent("UNIT_PET")
 f:SetScript("OnEvent", function(self, event, unit)
@@ -221,9 +223,9 @@ f:SetScript("OnEvent", function(self, event, unit)
         print("ClearCombatText loaded. |cff888888/cct test|r to preview, |cff888888/cct anchor|r to move.|r")
         return
     end
-    -- keep the stream bound to the player across vehicle and pet changes
+    -- keep the stream bound to the player across loading screens, vehicles and pets
     if C_CombatText == nil then return end
-    if unit == "player" then
+    if event == "PLAYER_ENTERING_WORLD" or unit == "player" then
         if UnitHasVehicleUI("player") then
             bindUnit("vehicle")
         else

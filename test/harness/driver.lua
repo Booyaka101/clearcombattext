@@ -20,8 +20,8 @@ expect(mainFrame, "main frame never created")
 mainFrame.scripts.OnEvent(mainFrame, "PLAYER_LOGIN")
 
 -- 1. login banner + unit binding
-local okBind = C_CombatText.activeUnit
-expect(okBind == "player" or okBind == nil, "login did not bind player or errored: " .. tostring(okBind))
+mainFrame.scripts.OnEvent(mainFrame, "PLAYER_LOGIN")
+expect(C_CombatText.activeUnit == "player", "login did not bind the player: " .. tostring(C_CombatText.activeUnit))
 local banner = false
 for _, l in ipairs(OUT) do if l:find("ClearCombatText loaded", 1, true) then banner = true end end
 expect(banner, "login banner missing")
@@ -66,7 +66,32 @@ SHOWN = {}
 updater.scripts.OnUpdate(updater, 0.1)
 expect(#SHOWN == 0, "window expiry rendered a duplicate: " .. table.concat(SHOWN, ","))
 
--- 3. /cct test renders five strings
+-- 4. animation branch: mid-lifetime the string rises, fades, crits pop
+SHOWN = {}
+local critEntry
+local function fire(mtype, data)
+    EVENTS[#EVENTS + 1] = { data = data }
+    mainFrame.hooks.OnEvent(mainFrame, "COMBAT_TEXT_UPDATE", mtype)
+end
+fire("SPELL_DAMAGE_CRIT", 4912)
+local critFs
+for _, fs2 in ipairs(FONTSTRINGS) do if fs2.text == "4912" then critFs = fs2 end end
+expect(critFs, "crit string not found")
+local beforeY = select(5, critFs:GetPoint()) or 0
+CLOCK = CLOCK + 0.5
+updater.scripts.OnUpdate(updater, 0.5)
+local _, _, _, afterX, afterY = critFs:GetPoint()
+expect((afterY or 0) > (beforeY or 0), "string did not rise: " .. tostring(beforeY) .. " -> " .. tostring(afterY))
+expect((critFs.alpha or 1) < 1, "string did not fade, alpha=" .. tostring(critFs.alpha))
+-- expired after full lifetime
+CLOCK = CLOCK + 2.0
+updater.scripts.OnUpdate(updater, 0.1)
+
+-- 5. loading screen keeps the stream bound
+mainFrame.scripts.OnEvent(mainFrame, "PLAYER_ENTERING_WORLD", 1412)
+expect(C_CombatText.activeUnit == "player", "rebind after loading screen failed: " .. tostring(C_CombatText.activeUnit))
+
+-- 6. /cct test renders five strings
 SHOWN = {}
 SlashCmdList.CLEARCOMBATTEXT("test")
 expect(#SHOWN >= 5, "test render produced " .. #SHOWN .. " strings")

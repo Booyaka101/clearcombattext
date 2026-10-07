@@ -23,6 +23,7 @@ Mik's Scrolling Battle Text used to make readable:
 
 - `/cct test` — preview the styling with sample events
 - `/cct anchor` — show a draggable box to position the streams, run again to lock
+- `/cct reset` — put the streams back to the default position
 - `/cct` — status
 
 Tip: turn Blizzard's own floating combat text off (Interface → Combat) or you will

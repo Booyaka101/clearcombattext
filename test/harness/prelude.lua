@@ -19,7 +19,7 @@ CLOCK = 0
 EVENTS = {}
 C_CombatText = {
     activeUnit = nil,
-    SetActiveUnit = function(_, unit) C_CombatText.activeUnit = unit; return true end,
+    SetActiveUnit = function(unit) C_CombatText.activeUnit = unit; return true end,
     GetCurrentEventInfo = function()
         local e = EVENTS[#EVENTS]
         if not e then return nil end
