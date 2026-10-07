@@ -129,6 +129,32 @@ anchor:EnableMouse(false)
 anchor:SetClampedToScreen(true)
 anchor:Hide()
 
+ClearCombatTextDB = ClearCombatTextDB or {}
+
+local function saveAnchor()
+    local point, rel, relPoint, x, y = anchor:GetPoint()
+    if point then
+        ClearCombatTextDB.anchor = { point = point, relPoint = relPoint, x = x, y = y }
+    end
+end
+
+-- drag handling stays attached for the session; the anchor is merely hidden when
+-- locked, so StopMovingOrSizing always fires and the position is always saved
+anchor:RegisterForDrag("LeftButton")
+anchor:SetScript("OnDragStart", anchor.StartMoving)
+anchor:SetScript("OnDragStop", function()
+    anchor.StopMovingOrSizing(anchor)
+    saveAnchor()
+end)
+
+local function restoreAnchor()
+    local s = ClearCombatTextDB and ClearCombatTextDB.anchor
+    if s and s.point then
+        anchor:ClearAllPoints()
+        anchor:SetPoint(s.point, UIParent, s.relPoint, s.x, s.y)
+    end
+end
+
 local anchorTex = anchor:CreateTexture(nil, "BACKGROUND")
 anchorTex:SetAllPoints()
 anchorTex:SetColorTexture(0, 0.8, 0.9, 0.25)
@@ -220,6 +246,7 @@ f:SetScript("OnEvent", function(self, event, unit)
     if event == "PLAYER_LOGIN" then
         if C_CombatText == nil then return end
         bindUnit("player")
+        restoreAnchor()
         print("ClearCombatText loaded. |cff888888/cct test|r to preview, |cff888888/cct anchor|r to move.|r")
         return
     end
@@ -269,15 +296,14 @@ SlashCmdList.CLEARCOMBATTEXT = function(msg)
         if anchor:IsShown() then
             anchor:Hide()
             anchor:EnableMouse(false)
+            saveAnchor()
         else
             anchor:Show()
             anchor:EnableMouse(true)
-            anchor:RegisterForDrag("LeftButton")
-            anchor:SetScript("OnDragStart", anchor.StartMoving)
-            anchor:SetScript("OnDragStop", anchor.StopMovingOrSizing)
             print("ClearCombatText: drag the box, then |cff888888/cct anchor|r to lock.")
         end
     elseif msg == "reset" then
+        ClearCombatTextDB.anchor = nil
         anchor:ClearAllPoints()
         anchor:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
         print("ClearCombatText: position reset.")

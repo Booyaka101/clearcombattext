@@ -91,6 +91,29 @@ updater.scripts.OnUpdate(updater, 0.1)
 mainFrame.scripts.OnEvent(mainFrame, "PLAYER_ENTERING_WORLD", 1412)
 expect(C_CombatText.activeUnit == "player", "rebind after loading screen failed: " .. tostring(C_CombatText.activeUnit))
 
+-- 5b. anchor persistence: drag-stop saves, reset clears, restore applies
+-- find the anchor frame (named ClearCombatTextAnchor)
+local anchorFrame
+for _, fr in ipairs(FRAMES) do
+    if fr.name == "ClearCombatTextAnchor" then anchorFrame = fr end
+end
+expect(anchorFrame, "anchor frame not found")
+anchorFrame:SetPoint("CENTER", UIParent, "CENTER", -50, 200)
+anchorFrame.scripts.OnDragStop()
+expect(ClearCombatTextDB.anchor and ClearCombatTextDB.anchor.x == -50 and ClearCombatTextDB.anchor.y == 200,
+    "drag stop did not save position: " .. (ClearCombatTextDB.anchor and ClearCombatTextDB.anchor.x or "nil"))
+-- simulate a relogin: fresh login event restores the saved point
+anchorFrame:ClearAllPoints()
+anchorFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+mainFrame.scripts.OnEvent(mainFrame, "PLAYER_LOGIN")
+local _, _, _, rx, ry = anchorFrame:GetPoint()
+expect(rx == -50 and ry == 200, "restore did not apply saved position: " .. tostring(rx) .. "," .. tostring(ry))
+-- reset clears both the live point and the saved one
+SlashCmdList.CLEARCOMBATTEXT("reset")
+expect(ClearCombatTextDB.anchor == nil, "reset did not clear the saved position")
+local _, _, _, nx, ny = anchorFrame:GetPoint()
+expect(nx == 0 and ny == 120, "reset did not restore the default position")
+
 -- 6. /cct test renders five strings
 SHOWN = {}
 SlashCmdList.CLEARCOMBATTEXT("test")
