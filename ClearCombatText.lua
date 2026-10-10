@@ -95,7 +95,7 @@ local render -- forward-declared: consolidate calls it, defined below
 
 local function consolidate(now, mtype, amount)
     local p = pending[mtype]
-    if p and p.entry and not p.entry.done and (now - p.t) <= WINDOW and amount then
+    if p and p.entry and p.entry.fs and not p.entry.done and (now - p.t) <= WINDOW and amount then
         p.n = p.n + 1
         p.sum = p.sum + amount
         p.t = now
@@ -106,7 +106,7 @@ local function consolidate(now, mtype, amount)
     end
     if amount then
         local entry = render(now, mtype, BreakUpLargeNumbers(amount))
-        if entry then
+        if entry and entry.fs then
             pending[mtype] = { t = now, n = 1, sum = amount, entry = entry }
         end
     end
@@ -184,6 +184,7 @@ render = function(now, mtype, text, opts)
     opts = opts or TYPES[mtype] or { color = { 1, 1, 1 }, size = 18 }
     local incoming = INCOMING[mtype]
     local fs = acquire()
+    if not fs then return nil end -- guard: stub layer may fail under injection
     fs:SetText(text)
     fs:SetAlpha(1) -- pooled strings carry the tail of their last fade
     fs:SetTextColor(opts.color[1], opts.color[2], opts.color[3], opts.dim and 0.75 or 1)
