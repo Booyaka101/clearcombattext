@@ -11,8 +11,6 @@
 -- Every C_CombatText call is pcall-wrapped: the Forever beta moves, and a signature
 -- change must degrade to silence, never to an error mid-fight.
 
-local ADDON = ...
-
 -- ---------------------------------------------------------------------------
 -- event info access
 
@@ -248,6 +246,10 @@ f:SetScript("OnEvent", function(self, event, unit)
         if C_CombatText == nil then return end
         bindUnit("player")
         print("ClearCombatText loaded. |cff888888/cct test|r to preview, |cff888888/cct anchor|r to move.|r")
+        -- warn once if Blizzard's own floating combat text is on (they will overlap)
+        if GetCVarBool("enableCombatText") then
+            print("|cffffd200ClearCombatText: Blizzard's floating combat text is ON. Turn it off in Interface > Combat to avoid double numbers.|r")
+        end
         return
     end
     -- keep the stream bound to the player across loading screens, vehicles and pets
@@ -267,9 +269,11 @@ f:HookScript("OnEvent", function(self, event, mtype)
     local data, a2, a3 = currentEvent()
     local opts = TYPES[mtype]
     if opts == nil then
-        -- unknown type: still show the number, unstyled, rather than drop it
+        -- unknown type: show it rather than drop it, styled as unknown
         if type(data) == "number" then
             consolidate(GetTime(), mtype, data)
+        elseif type(data) == "string" and #data > 0 then
+            render(GetTime(), mtype, data .. " (?)", { color = { 0.7, 0.7, 0.7 }, size = 14, dim = true })
         end
         return
     end
@@ -278,11 +282,11 @@ f:HookScript("OnEvent", function(self, event, mtype)
         render(GetTime(), mtype, tostring(label), opts)
         return
     end
-    local amount = tonumber(data)
+    -- the amount is usually in data; absorbs and partial resists carry it in a2/a3
+    -- (Blizzard's own code reads arg3 for absorb trailers)
+    local amount = tonumber(data) or tonumber(a2) or tonumber(a3)
     if amount then
         consolidate(GetTime(), mtype, amount)
-    elseif a2 and tonumber(a2) then
-        consolidate(GetTime(), mtype, tonumber(a2))
     end
 end)
 
@@ -314,7 +318,12 @@ SlashCmdList.CLEARCOMBATTEXT = function(msg)
         render(now, "SPELL_DAMAGE", "385 x6")
         render(now, "HEALTH_LOW", LOW_HEALTH or "Low health!")
         render(now, "AURA_START", "Clearcasting")
+    elseif msg == "blizz" then
+        -- toggle Blizzard's own floating combat text
+        local on = GetCVarBool("enableCombatText")
+        SetCVar("enableCombatText", not on)
+        print("ClearCombatText: Blizzard floating combat text " .. (on and "OFF." or "ON."))
     else
-        print("ClearCombatText: |cff888888/cct test|r preview, |cff888888/cct anchor|r move, active strings: " .. #active)
+        print("ClearCombatText: |cff888888/cct test|r preview, |cff888888/cct anchor|r move, |cff888888/cct blizz|r toggle Blizzard's, active: " .. #active)
     end
 end

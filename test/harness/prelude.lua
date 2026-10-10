@@ -79,4 +79,7 @@ end
 UIParent = CreateFrame("Frame", "UIParent")
 math.random = function(a, b) return 0 end -- deterministic stagger
 
+GetCVarBool = GetCVarBool or function() return false end
+SetCVar = SetCVar or function() end
+
 SlashCmdList = {}
