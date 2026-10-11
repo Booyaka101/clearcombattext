@@ -268,6 +268,7 @@ f:RegisterEvent("COMBAT_TEXT_UPDATE")
 f:HookScript("OnEvent", function(self, event, mtype)
     if event ~= "COMBAT_TEXT_UPDATE" or C_CombatText == nil then return end
     local data, a2, a3 = currentEvent()
+    if data == nil and a2 == nil and a3 == nil then return end -- no data, skip
     local opts = TYPES[mtype]
     if opts == nil then
         -- unknown type: show it rather than drop it, styled as unknown
