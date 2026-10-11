@@ -14,10 +14,14 @@
 -- ---------------------------------------------------------------------------
 -- event info access
 
+-- Returns ok first: ok is a clean pcall boolean, the only value here safe to test
+-- directly. Everything else may be a secret value on live clients, where compare,
+-- concat and length operations all error ("...secret string value, while execution
+-- tainted by..."). The only live-proven safe touches are type/tonumber/tostring.
 local function currentEvent()
     local ok, data, a2, a3 = pcall(C_CombatText.GetCurrentEventInfo)
-    if ok then return data, a2, a3 end
-    return nil
+    if ok then return true, data, a2, a3 end
+    return false
 end
 
 local function bindUnit(unit)
@@ -267,21 +271,30 @@ end)
 f:RegisterEvent("COMBAT_TEXT_UPDATE")
 f:HookScript("OnEvent", function(self, event, mtype)
     if event ~= "COMBAT_TEXT_UPDATE" or C_CombatText == nil then return end
-    local data, a2, a3 = currentEvent()
-    if data == nil and a2 == nil and a3 == nil then return end -- no data, skip
+    local ok, data, a2, a3 = currentEvent()
+    if not ok then return end -- GetCurrentEventInfo itself failed, skip
     local opts = TYPES[mtype]
     if opts == nil then
-        -- unknown type: show it rather than drop it, styled as unknown
-        if type(data) == "number" then
-            consolidate(GetTime(), mtype, data)
-        elseif type(data) == "string" and data ~= "" then
-            render(GetTime(), mtype, tostring(data) .. " (?)", { color = { 0.7, 0.7, 0.7 }, size = 14, dim = true })
+        -- unknown type: show it rather than drop it, styled as unknown.
+        -- data/a2/a3 may be secrets; only tonumber/tostring ever touch them,
+        -- and every compare/concat happens on the clean results.
+        local num = tonumber(data)
+        if num then
+            consolidate(GetTime(), mtype, num)
+        else
+            local text = tostring(data)
+            if text ~= "" and text ~= "nil" then
+                render(GetTime(), mtype, text .. " (?)", { color = { 0.7, 0.7, 0.7 }, size = 14, dim = true })
+            end
         end
         return
     end
     if opts.text then
-        local label = data or TEXT_LABELS[mtype] or mtype
-        render(GetTime(), mtype, tostring(label), opts)
+        -- tostring first, then decide: no boolean test on the secret itself
+        local label = TEXT_LABELS[mtype] or mtype
+        local text = tostring(data)
+        if text ~= "nil" then label = text end
+        render(GetTime(), mtype, label, opts)
         return
     end
     -- the amount is usually in data; absorbs and partial resists carry it in a2/a3
