@@ -276,24 +276,19 @@ f:HookScript("OnEvent", function(self, event, mtype)
     local opts = TYPES[mtype]
     if opts == nil then
         -- unknown type: show it rather than drop it, styled as unknown.
-        -- data/a2/a3 may be secrets; only tonumber/tostring ever touch them,
-        -- and every compare/concat happens on the clean results.
+        -- Live-proven secret rules: tostring keeps the marker (comparing its output
+        -- errors), tonumber launders, ~= nil is always safe, SetText accepts secrets.
         local num = tonumber(data)
         if num then
             consolidate(GetTime(), mtype, num)
-        else
-            local text = tostring(data)
-            if text ~= "" and text ~= "nil" then
-                render(GetTime(), mtype, text .. " (?)", { color = { 0.7, 0.7, 0.7 }, size = 14, dim = true })
-            end
+        elseif data ~= nil then
+            render(GetTime(), mtype, tostring(data), { color = { 0.7, 0.7, 0.7 }, size = 14, dim = true })
         end
         return
     end
     if opts.text then
-        -- tostring first, then decide: no boolean test on the secret itself
         local label = TEXT_LABELS[mtype] or mtype
-        local text = tostring(data)
-        if text ~= "nil" then label = text end
+        if data ~= nil then label = tostring(data) end
         render(GetTime(), mtype, label, opts)
         return
     end
