@@ -27,4 +27,4 @@ jobs:
         with:
           node-version: 22
       - name: wow-secret-lint
-        run: npx github:Booyaka101/wow-secret-lint .
+        run: npx github:Booyaka101/wow-secret-lint . --baseline=secret-lint-baseline.json

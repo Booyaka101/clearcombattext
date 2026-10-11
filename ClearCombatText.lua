@@ -275,7 +275,7 @@ f:HookScript("OnEvent", function(self, event, mtype)
         if type(data) == "number" then
             consolidate(GetTime(), mtype, data)
         elseif type(data) == "string" and data ~= "" then
-            render(GetTime(), mtype, data .. " (?)", { color = { 0.7, 0.7, 0.7 }, size = 14, dim = true })
+            render(GetTime(), mtype, tostring(data) .. " (?)", { color = { 0.7, 0.7, 0.7 }, size = 14, dim = true })
         end
         return
     end
