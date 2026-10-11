@@ -274,7 +274,7 @@ f:HookScript("OnEvent", function(self, event, mtype)
         -- unknown type: show it rather than drop it, styled as unknown
         if type(data) == "number" then
             consolidate(GetTime(), mtype, data)
-        elseif type(data) == "string" and #data > 0 then
+        elseif type(data) == "string" and data ~= "" then
             render(GetTime(), mtype, data .. " (?)", { color = { 0.7, 0.7, 0.7 }, size = 14, dim = true })
         end
         return
