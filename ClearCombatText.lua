@@ -21,8 +21,9 @@ end
 local pending = {}
 local boundUnit
 local function bindUnit(unit)
-    if type(C_CombatText.SetActiveUnit) ~= "function" then return false end
-    local ok = pcall(C_CombatText.SetActiveUnit, unit)
+    local setActiveUnit = C_CombatText and C_CombatText.SetActiveUnit
+    if type(setActiveUnit) ~= "function" then return false end
+    local ok = pcall(setActiveUnit, unit)
     if ok and boundUnit ~= unit then
         pending = {}
         boundUnit = unit
@@ -397,10 +398,12 @@ end)
 
 f:RegisterEvent("COMBAT_TEXT_UPDATE")
 f:HookScript("OnEvent", function(self, event, mtype)
-    if event ~= "COMBAT_TEXT_UPDATE" or C_CombatText == nil or type(C_CombatText.GetCurrentEventInfo) ~= "function" then return end
+    if event ~= "COMBAT_TEXT_UPDATE" then return end
+    local getCurrentEventInfo = C_CombatText and C_CombatText.GetCurrentEventInfo
+    if type(getCurrentEventInfo) ~= "function" then return end
     if issecretvalue and issecretvalue(mtype) then return end
     if type(mtype) ~= "string" then return end
-    local data, a2, a3 = C_CombatText.GetCurrentEventInfo()
+    local data, a2, a3 = getCurrentEventInfo()
     local opts = TYPES[mtype] or UNKNOWN
     if opts.text then
         local label = TEXT_LABELS[mtype] or mtype

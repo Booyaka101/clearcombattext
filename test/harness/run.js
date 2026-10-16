@@ -1,12 +1,15 @@
 const fs = require('fs');
 const path = require('path');
 const fengari = require('fengari');
+const assert = require('node:assert/strict');
 const { lua, lauxlib } = fengari;
 
 const here = __dirname;
 const read = (p) => fs.readFileSync(path.join(here, p), 'utf8');
 const prelude = read('prelude.lua');
 const addon = fs.readFileSync(path.join(here, '..', '..', 'ClearCombatText.lua'), 'utf8');
+const toc = fs.readFileSync(path.join(here, '..', '..', 'ClearCombatText.toc'), 'utf8');
+assert.match(toc, /^## Category: Combat\r?$/m, 'native combat category missing');
 
 function run(name, setup, driver, savedVariables = '') {
   const program = prelude + '\n' + setup + '\ndo\n' + addon + '\nend\n' + savedVariables + '\n' + driver;
@@ -25,6 +28,19 @@ function run(name, setup, driver, savedVariables = '') {
 
 run('pipeline', '', read('driver.lua'));
 run('regressions', '', read('regressions.lua'));
+
+for (const [name, setup] of Object.entries({
+  missingNamespace: 'C_CombatText=nil',
+  missingMethods: 'C_CombatText={}',
+  invalidMethods: 'C_CombatText={SetActiveUnit=true,GetCurrentEventInfo=true}',
+  missingBinding: 'C_CombatText.SetActiveUnit=nil',
+  missingPayload: 'C_CombatText.GetCurrentEventInfo=nil',
+  invalidBinding: 'C_CombatText.SetActiveUnit=true',
+  invalidPayload: 'C_CombatText.GetCurrentEventInfo=true',
+})) {
+  run(name, `local originalCombatText={SetActiveUnit=C_CombatText.SetActiveUnit,GetCurrentEventInfo=C_CombatText.GetCurrentEventInfo}\n${setup}`, read('api-compatibility.lua'));
+  console.log(`API COMPATIBILITY PASSED: ${name}`);
+}
 
 const position = (x, direction) => `{point="CENTER",relPoint="CENTER",x=${x},y=100,direction="${direction}"}`;
 const scenarios = {
