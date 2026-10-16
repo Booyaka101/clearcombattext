@@ -5,6 +5,7 @@
 ## Version: 0.4.0
 ## IconTexture: Interface/Icons/INV_Misc_Note_06
 ## X-Category: Combat
+## Category: Combat
 ## X-Website: https://github.com/Booyaka101/clearcombattext
 ## SavedVariables: ClearCombatTextDB
 
