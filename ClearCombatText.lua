@@ -183,7 +183,6 @@ local function consolidate(now, mtype, amount, opts, key)
         and (now - p.entry.born) < p.entry.duration and amount then
         p.n = p.n + 1
         p.sum = p.sum + amount
-        p.t = now
         local text = BreakUpLargeNumbers(p.sum) .. " x" .. p.n
         p.entry.fs:SetText(text)
         -- Keep the original animation age. Resetting it makes a consolidated
@@ -193,6 +192,7 @@ local function consolidate(now, mtype, amount, opts, key)
     if amount then
         local entry = render(now, mtype, BreakUpLargeNumbers(amount), opts)
         if entry and entry.fs then
+            -- The window starts at the first hit so fresh hits never join an old, faded group.
             pending[key] = { t = now, n = 1, sum = amount, entry = entry }
         end
     end
@@ -316,6 +316,12 @@ local function discard(index)
     release(entry.fs)
 end
 
+local function expire(now)
+    for i = #active, 1, -1 do
+        if now - active[i].born >= active[i].duration then discard(i) end
+    end
+end
+
 local function clearDisplay()
     for i = #active, 1, -1 do discard(i) end
     pending = {}
@@ -350,9 +356,13 @@ end
 
 render = function(now, mtype, text, opts, preview)
     if not allowed(mtype, preview) then return nil end
+    -- Events can arrive before OnUpdate; dead lines must not occupy capacity.
+    expire(now)
     opts = opts or TYPES[mtype] or DEFAULT
     local stream = streams[INCOMING[mtype] and "incoming" or "gains"]
     local area, importance = options[stream.name], priority(mtype, opts)
+    -- All four demo priority levels sit below every real event category.
+    if preview then importance = importance - 4 end
     local count, victim = 0, nil
     for i, entry in ipairs(active) do
         if entry.stream == stream then count = count + 1 end
@@ -369,6 +379,7 @@ render = function(now, mtype, text, opts, preview)
     while stream.slots[slot] do slot = slot + 1 end
     local fs = acquire()
     if not fs then return nil end -- guard: stub layer may fail under injection
+    if preview then text = string.format("[Preview] %s", text) end
     fs:SetText(text)
     fs:SetAlpha(options.opacity)
     local color = options.customColors and options[stream.name .. "Color"] or opts.color
@@ -384,7 +395,7 @@ render = function(now, mtype, text, opts, preview)
     local entry = { fs = fs, born = now, size = size, fontSize = size, font = font,
         crit = opts.crit, critScale = options.critScale, done = false, stream = stream,
         slot = slot, height = height, spacing = area.spacing, duration = area.duration,
-        distance = area.distance, priority = importance, opacity = options.opacity }
+        distance = area.distance, priority = importance, opacity = options.opacity, preview = preview }
     stream.slots[slot] = true
     active[#active + 1] = entry
     layout(now)
@@ -395,6 +406,7 @@ end
 
 updater:SetScript("OnUpdate", function(self, elapsed)
     local now = GetTime()
+    expire(now)
     if previewUntil then
         if now >= previewUntil then previewUntil = nil
         elseif now >= previewNext then
@@ -408,18 +420,14 @@ updater:SetScript("OnUpdate", function(self, elapsed)
     for i = #active, 1, -1 do
         local a = active[i]
         local age = now - a.born
-        if age >= a.duration then
-            discard(i)
-        else
-            local k = age / a.duration
-            a.fs:SetAlpha(a.opacity * (1 - k) ^ 1.4)
-            if a.crit and a.font then
-                local pop = 1 + (a.critScale - 1) * math.max(0, 1 - age * 8)
-                local size = math.floor(a.size * pop)
-                if size ~= a.fontSize then
-                    a.fs:SetFont(a.font, size, options.outline)
-                    a.fontSize = size
-                end
+        local k = age / a.duration
+        a.fs:SetAlpha(a.opacity * (1 - k) ^ 1.4)
+        if a.crit and a.font then
+            local pop = 1 + (a.critScale - 1) * math.max(0, 1 - age * 8)
+            local size = math.floor(a.size * pop)
+            if size ~= a.fontSize then
+                a.fs:SetFont(a.font, size, options.outline)
+                a.fontSize = size
             end
         end
     end
@@ -444,7 +452,17 @@ function addon.OnSettingsChanged(layoutChanged)
     if layoutChanged then restoreAnchor() end
 end
 
+function addon.StopPreview()
+    previewUntil = nil
+    for i = #active, 1, -1 do
+        if active[i].preview then discard(i) end
+    end
+    layout(GetTime())
+    if #active == 0 then updater:Hide() end
+end
+
 function addon.Preview(burst)
+    addon.StopPreview()
     local now = GetTime()
     render(now, "SPELL_DAMAGE_CRIT", "4,912", nil, true)
     render(now, "HEAL_CRIT", "1,208", nil, true)

@@ -46,19 +46,35 @@ function Frame:GetPoint()
     local p = self.points and self.points[#self.points]
     return p and p[1], p and p[2], p and p[3], p and p[4], p and p[5]
 end
-function Frame:Show() self.shown = true end
+function Frame:Show()
+    local changed = not self.shown
+    self.shown = true
+    if changed and self.scripts and self.scripts.OnShow then self.scripts.OnShow(self) end
+end
 function Frame:SetShown(show) if show then self:Show() else self:Hide() end end
-function Frame:Hide() self.shown = false end
+function Frame:Hide()
+    local changed = self.shown
+    self.shown = false
+    if changed and self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end
+end
 function Frame:IsShown() return self.shown == true end
 function Frame:SetSize(width, height) self.width, self.height = width, height end
 function Frame:SetWidth(width) self.width = width end
-function Frame:SetText(text) self.text = text end
+function Frame:GetWidth() return self.width end
+function Frame:GetHeight() return self.height end
+function Frame:SetScale(scale) self.scale = scale end
+function Frame:SetText(text)
+    self.text = text
+    if self.scripts and self.scripts.OnTextChanged then self.scripts.OnTextChanged(self) end
+end
 function Frame:GetText() return self.text or "" end
 function Frame:SetChecked(checked) self.checked = checked end
 function Frame:GetChecked() return self.checked end
 function Frame:SetAutoFocus() end
 function Frame:SetMaxLetters() end
-function Frame:ClearFocus() end
+function Frame:SetFocus() self.focused = true end
+function Frame:HasFocus() return self.focused == true end
+function Frame:ClearFocus() self.focused = false end
 function Frame:SetFrameStrata() end
 function Frame:SetMinMaxValues(low, high) self.low, self.high = low, high end
 function Frame:SetValueStep(step) self.step = step end
@@ -111,12 +127,14 @@ CREATE_CALLS = 0
 FRAMES = {}
 CreateFrame = function(kind, name, parent)
     CREATE_CALLS = CREATE_CALLS + 1
-    local fr = setmetatable({ kind = kind, name = name }, Frame)
+    local fr = setmetatable({ kind = kind, name = name, parent = parent, shown = true }, Frame)
+    if name then _G[name] = fr end
     FRAMES[#FRAMES + 1] = fr
     return fr
 end
 
 UIParent = CreateFrame("Frame", "UIParent")
+UIParent:SetSize(1920, 1080)
 math.random = function(a, b) return 0 end -- deterministic stagger
 
 GetCVarBool = GetCVarBool or function() return false end

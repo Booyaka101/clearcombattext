@@ -83,11 +83,13 @@ fire("SPELL_DAMAGE", 100)
 local merged = visible(incoming)[1]
 tick(0.3)
 local _, oldY = position(merged)
+local oldAlpha = merged.alpha
 fire("SPELL_DAMAGE", 100)
 expect(merged.text == "200 x2", "public consolidation broke")
 tick(0.01)
 local _, newY = position(merged)
 expect(newY >= oldY, "consolidation rewound animation")
+expect(merged.alpha <= oldAlpha, "consolidation restarted the fade")
 for i = 1, 7 do tick(0.3); fire("SPELL_DAMAGE", 100) end
 expect(merged.text ~= "900 x9", "consolidation kept an expired entry alive")
 
@@ -194,6 +196,8 @@ click("minimal")
 expect(ADDON.GetOptions().incoming.maxLines == 6 and not ADDON.GetOptions().filters.periodic, "UI preset failed")
 click("Load")
 expect(ADDON.GetOptions().fontScale == 1.25 and ADDON.GetOptions().customColors, "UI profile load failed")
+click("Delete")
+expect(ClearCombatTextDB.profiles["UI Profile"], "UI deleted a profile without confirmation")
 click("Delete")
 expect(not ClearCombatTextDB.profiles["UI Profile"], "UI profile delete failed")
 click("Unlock areas")

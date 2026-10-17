@@ -4,6 +4,17 @@ local panel, status, selectedPage
 local pages, refreshers = {}, {}
 local syncing = false
 local sliderCount = 0
+local pendingAction, pendingName
+
+local function cancelProfileAction()
+    if pendingAction and status then status:SetText("Profile action cancelled.") end
+    pendingAction, pendingName = nil, nil
+end
+
+local function fitPanel()
+    panel:SetScale(math.min(1, math.max(1, UIParent:GetWidth() - 32) / 560,
+        math.max(1, UIParent:GetHeight() - 32) / 610))
+end
 
 local function label(parent, text, x, y)
     local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -94,22 +105,34 @@ local function colorEditor(parent, text, y, key)
     label(parent, text .. " (RRGGBB)", 12, y - 5)
     local e = edit(parent, 235, y, 110)
     e:SetMaxLetters(6)
+    local dirty = false
+    e:SetScript("OnTextChanged", function(_, userInput)
+        if userInput then dirty = true end
+    end)
+    e:SetScript("OnEscapePressed", function(self)
+        dirty = false
+        self:ClearFocus()
+        refresh()
+    end)
     local function apply()
         local hex = e:GetText()
         if not hex:match("^%x%x%x%x%x%x$") then status:SetText("Use exactly six hexadecimal digits, for example FF5533."); return end
-        changed(nil, key, { tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255 })
         e:ClearFocus()
+        dirty = false
+        changed(nil, key, { tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255 })
         status:SetText("Color saved. Enable custom area colors to use it.")
     end
     e:SetScript("OnEnterPressed", apply)
     button(parent, "Apply", 365, y, 115, apply)
     refreshers[#refreshers + 1] = function()
+        if dirty or e:HasFocus() then return end
         local c = value(nil, key)
         e:SetText(string.format("%02X%02X%02X", math.floor(c[1] * 255 + 0.5), math.floor(c[2] * 255 + 0.5), math.floor(c[3] * 255 + 0.5)))
     end
 end
 
 local function selectPage(name)
+    cancelProfileAction()
     selectedPage = name
     for key, page in pairs(pages) do page:SetShown(key == name) end
     refresh()
@@ -118,6 +141,7 @@ end
 local function createPanel()
     panel = CreateFrame("Frame", "ClearCombatTextConfig", UIParent, "BasicFrameTemplateWithInset")
     panel:SetSize(560, 610)
+    fitPanel()
     panel:SetPoint("CENTER")
     panel:SetClampedToScreen(true)
     panel:SetMovable(true)
@@ -177,6 +201,7 @@ local function createPanel()
     label(profiles, "Presets change appearance and filters, not your positions.", 12, -10)
     for i, name in ipairs({ "readable", "minimal", "healer" }) do
         button(profiles, name, 12 + (i - 1) * 160, -42, 150, function()
+            cancelProfileAction()
             addon.ApplyPreset(name)
             refresh()
             addon.Preview()
@@ -186,13 +211,23 @@ local function createPanel()
     label(profiles, "Named profiles include appearance, filters and both positions.", 12, -100)
     local profileName = edit(profiles, 18, -137, 290)
     profileName:SetMaxLetters(32)
+    profileName:SetScript("OnTextChanged", cancelProfileAction)
     label(profiles, "Name (case-sensitive)", 330, -142)
     local methods = { Save = addon.SaveProfile, Load = addon.LoadProfile, Delete = addon.DeleteProfile }
     for i, action in ipairs({ "Save", "Load", "Delete" }) do
         button(profiles, action, 12 + (i - 1) * 160, -182, 150, function()
-            local _, message = methods[action](profileName:GetText())
+            local name = strtrim(profileName:GetText())
+            if (action == "Delete" or action == "Save") and addon.HasProfile(name)
+                and (pendingAction ~= action or pendingName ~= name) then
+                pendingAction, pendingName = action, name
+                status:SetText("Click " .. action .. " again to " .. (action == "Delete" and "delete " or "overwrite ") .. name .. ".")
+                return
+            end
+            cancelProfileAction()
+            local ok, message = methods[action](name)
             profileName:ClearFocus()
             refresh()
+            if ok and action == "Load" then addon.Preview() end
             status:SetText(message)
         end)
     end
@@ -200,7 +235,7 @@ local function createPanel()
     saved:SetWidth(490)
     saved:SetJustifyH("LEFT")
     refreshers[#refreshers + 1] = function() saved:SetText("Saved profiles (maximum 10):\n" .. table.concat(addon.ProfileNames(), ", ")) end
-    label(profiles, "Save overwrites a profile with the same name.\nDelete removes only the named profile, not current settings.", 12, -350)
+    label(profiles, "Overwrite and delete require a second click to confirm.\nDelete removes only the named profile, not current settings.", 12, -350)
 
     button(panel, "Preview", 20, -510, 115, function() addon.Preview() end)
     button(panel, "5-second burst", 150, -510, 125, function() addon.Preview(true) end)
@@ -209,7 +244,15 @@ local function createPanel()
     status = label(panel, "Changes save immediately. Preview also works while disabled.", 20, -555)
     status:SetWidth(515)
     status:SetJustifyH("LEFT")
-    panel:SetScript("OnShow", function() selectPage(selectedPage or "Appearance") end)
+    panel:SetScript("OnShow", function() fitPanel(); selectPage(selectedPage or "Appearance") end)
+    panel:SetScript("OnHide", function()
+        cancelProfileAction()
+        panel:StopMovingOrSizing()
+        addon.StopPreview()
+    end)
+    panel:RegisterEvent("DISPLAY_SIZE_CHANGED")
+    panel:RegisterEvent("UI_SCALE_CHANGED")
+    panel:SetScript("OnEvent", fitPanel)
     selectPage("Appearance")
 end
 

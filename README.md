@@ -10,8 +10,8 @@ secret-value restrictions.
 - **Two independent scroll areas.** Damage taken and harmful effects start on
   the left; heals, resources and other gains start on the right. Move either area
   separately and choose its scroll direction.
-- **Public-value consolidation.** Repeats inside 0.45 seconds merge into a sum:
-  three 340 hits become `1020 x3`. Secret combat amounts display individually;
+- **Public-value consolidation.** Repeats within 0.45 seconds of the first hit
+  merge into a sum: three 340 hits become `1020 x3`. Secret amounts display individually;
   they cannot be added together. Resource kinds consolidate separately.
 - **Crits you can see.** Criticals render larger with a pop, in their own color.
 - **Combat vocabulary.** Direct and periodic heals, shields, mitigation, avoidance,
@@ -20,10 +20,14 @@ secret-value restrictions.
   text uses separate rows. Layout never measures widgets that displayed secrets.
 - **Visual settings.** Font, outline, shadow, opacity, crit emphasis and optional
   area colors, with previews and independent duration, travel and spacing controls.
+  The panel scales to fit the screen. Hex color drafts survive unrelated edits;
+  Apply saves them and Escape discards the draft.
 - **Noise controls.** Toggle periodic damage/healing, resources, auras, avoidance
   and combat-state notifications using public event categories.
 - **Presets and profiles.** Readable, Minimal and Healer presets retain positions.
   Up to ten named profiles also save both positions and directions.
+  Overwrite and delete require confirmation in the panel; explicit slash commands
+  act immediately.
 
 ## Commands
 
@@ -46,6 +50,10 @@ secret-value restrictions.
 - `/cct`: status and command help
 
 `/clearcombattext` is an alternative if another addon claims `/cct`.
+
+Demo text is labeled `[Preview]` and always ranks below real events. Starting a
+new preview replaces the previous demo; closing settings stops its demo without
+removing live combat text.
 
 Tip: turn Blizzard's own floating combat text off (Interface → Combat) or you will
 see both. Settings are only changed when you explicitly run `/cct blizz`.
@@ -92,8 +100,10 @@ Coverage includes Blizzard-shaped heal payloads, secret display paths, vehicle
 binding, resource grouping, lock states, a 2,000-event burst, expiry and pool reuse.
 Settings coverage includes profile snapshots, category filters before payload
 access, mixed-size spacing in all directions, priority replacement, preview
-termination and UI callbacks. `npm run test:mutations` also verifies that seven
-deliberate regressions are rejected by the tests.
+termination and UI callbacks. Review fixtures cover expiry before the next update,
+fixed consolidation windows, preview isolation, maximum-size row reuse, screen
+resizing, draft preservation and profile confirmations. `npm run test:mutations`
+also verifies that fourteen deliberate regressions are rejected by the tests.
 
 Payload mappings follow Blizzard's
 [combat-text handler](https://github.com/Gethe/wow-ui-source/blob/18c6d677b605b312f3d813d498404631fb941977/Interface/AddOns/Blizzard_CombatText/Shared/CombatText.lua).

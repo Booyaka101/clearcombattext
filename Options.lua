@@ -140,6 +140,11 @@ function addon.ProfileNames()
     return names
 end
 
+function addon.HasProfile(name)
+    name = profileName(name)
+    return name ~= nil and profiles()[name] ~= nil
+end
+
 function addon.SaveProfile(name)
     name = profileName(name)
     if not name then return false, "Use 1-32 letters, numbers, spaces, underscores or hyphens." end

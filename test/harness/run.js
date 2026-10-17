@@ -31,6 +31,8 @@ function run(name, setup, driver, savedVariables = '', source = addon) {
 run('pipeline', '', read('driver.lua'));
 run('regressions', '', read('regressions.lua'));
 run('settings and layout', '', read('settings.lua'));
+run('render review', '', read('review.lua'));
+run('UI review', '', read('ui-review.lua'));
 
 for (const [name, setup] of Object.entries({
   missingNamespace: 'C_CombatText=nil',
@@ -73,10 +75,18 @@ if (process.argv.includes('--mutations')) {
     ['disabled events allowed', '(options.enabled or preview)', 'true'],
     ['aliased profile snapshot', 'options = addon.NormalizeOptions(addon.GetOptions())', 'options = addon.GetOptions()'],
     ['slider synchronization disabled', 'syncing = true', 'syncing = false'],
+    ['expiry disabled', 'if now - active[i].born >= active[i].duration then discard(i) end', 'if false then discard(i) end', 'review.lua'],
+    ['sliding consolidation window', 'p.n = p.n + 1', 'p.t = now; p.n = p.n + 1', 'review.lua'],
+    ['panel scaling disabled', 'panel:SetScale(math.min(1,', 'panel:SetScale(math.max(1,', 'ui-review.lua'],
+    ['profile confirmation bypassed', 'and addon.HasProfile(name)', 'and false', 'ui-review.lua'],
+    ['draft protection disabled', 'if dirty or e:HasFocus() then return end', '', 'ui-review.lua'],
+    ['preview priority isolation removed', 'if preview then importance = importance - 4 end', '', 'review.lua'],
+    ['preview cleanup removed', 'if active[i].preview then discard(i) end', '', 'review.lua'],
   ];
-  for (const [name, before, after] of mutations) {
+  for (const [name, before, after, driver = 'settings.lua'] of mutations) {
     assert.ok(addon.includes(before), `mutation target missing: ${name}`);
-    assert.throws(() => run(name, '', read('settings.lua'), '', addon.replace(before, after)), undefined, `mutation survived: ${name}`);
+    assert.throws(() => run(name, '', read(driver), '', addon.replace(before, after)),
+      /ASSERT FAILED:|filtered event fetched payload|stack (?:overflow|size exceeded)/i, `mutation survived or failed for an unrelated reason: ${name}`);
     console.log(`MUTATION CAUGHT: ${name}`);
   }
 }
