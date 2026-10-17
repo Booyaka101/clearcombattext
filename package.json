@@ -2,7 +2,8 @@
   "name": "clearcombattext-tests",
   "private": true,
   "scripts": {
-    "test": "node test/harness/run.js"
+    "test": "node test/harness/run.js",
+    "test:mutations": "node test/harness/run.js --mutations"
   },
   "dependencies": {
     "fengari": "^0.1.4"

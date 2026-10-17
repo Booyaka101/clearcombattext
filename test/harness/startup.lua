@@ -10,6 +10,13 @@ for _, frame in ipairs(FRAMES) do
     if frame.scripts and frame.scripts.OnUpdate then updater = frame end
 end
 main.scripts.OnEvent(main, "PLAYER_LOGIN")
+local options = ADDON.GetOptions()
+if CASE == "savedOptions" then
+    expect(options.enabled == false and options.fontScale == 1.5, "persisted options ignored")
+    expect(options.filters.auras == false and options.incoming.duration == 3.2, "nested persisted options ignored")
+else
+    expect(options.enabled and options.fontScale == 1 and options.opacity == 1, "invalid or absent options not defaulted")
+end
 local function centerX(frame)
     local point, _, _, x = frame:GetPoint()
     -- UIParent-relative coordinates suffice to compare these same-relativePoint
