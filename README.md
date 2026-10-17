@@ -16,17 +16,36 @@ secret-value restrictions.
 - **Crits you can see.** Criticals render larger with a pop, in their own color.
 - **Combat vocabulary.** Direct and periodic heals, shields, mitigation, avoidance,
   resource gains, aura gains and fades, and combat enter/leave.
+- **Predictable spacing.** Vertical text stacks ahead of newer lines; horizontal
+  text uses separate rows. Layout never measures widgets that displayed secrets.
+- **Visual settings.** Font, outline, shadow, opacity, crit emphasis and optional
+  area colors, with previews and independent duration, travel and spacing controls.
+- **Noise controls.** Toggle periodic damage/healing, resources, auras, avoidance
+  and combat-state notifications using public event categories.
+- **Presets and profiles.** Readable, Minimal and Healer presets retain positions.
+  Up to ten named profiles also save both positions and directions.
 
 ## Commands
 
-- `/cct test`: preview the styling with sample events
+- `/cct config`: open or close settings; changes save immediately and preview
+- `/cct test`: preview the styling with sample events, even when disabled
+- `/cct burst`: run a five-second burst preview using the current filters
+- `/cct toggle`: enable or disable event display without changing Blizzard settings
 - `/cct anchor`: show both boxes, or lock both if both are already visible
 - `/cct anchor incoming` or `/cct anchor gains`: toggle just one box; repeat to lock
 - `/cct direction incoming down`: set a stream's direction; accepts `incoming`
   or `gains` and `up`, `down`, `left` or `right`
 - `/cct reset`: reset both positions and directions
 - `/cct blizz`: explicitly toggle Blizzard's floating combat text
+- `/cct preset readable` (or `minimal`, `healer`): apply a preset, retaining positions
+- `/cct profile save My Raid`: save or overwrite a named profile
+- `/cct profile load My Raid`: restore settings, positions and directions
+- `/cct profile delete My Raid`: remove that saved profile only
+- `/cct profile list`: list saved profiles; names are case-sensitive, up to 32
+  letters, numbers, spaces, underscores or hyphens
 - `/cct`: status and command help
+
+`/clearcombattext` is an alternative if another addon claims `/cct`.
 
 Tip: turn Blizzard's own floating combat text off (Interface → Combat) or you will
 see both. Settings are only changed when you explicitly run `/cct blizz`.
@@ -44,8 +63,11 @@ public by `issecretvalue`. On older betas without that detector, all combat
 payloads are display-only and consolidation is disabled. Existing shared-anchor
 settings migrate to two separate positions on first login.
 
-At most 128 lines animate at once. Extra new lines are skipped while that limit
-is reached; existing public consolidation still updates. The widget pool is
+By default each area displays up to eight lines, configurable from 4 to 64 per
+area, with an overall 128-line ceiling. At capacity, crits and supported low-health
+or low-mana messages can replace lower-priority lines in that area. Equal-priority
+overflow is skipped; existing public consolidation still updates. Consolidation
+does not rewind animation or extend a line indefinitely. The widget pool is
 reused, the update frame sleeps when idle, and settled crits do not rewrite their
 font size each frame.
 
@@ -68,6 +90,10 @@ readable again.
 startup fixtures for saved positions, edge/corner migration and invalid settings.
 Coverage includes Blizzard-shaped heal payloads, secret display paths, vehicle
 binding, resource grouping, lock states, a 2,000-event burst, expiry and pool reuse.
+Settings coverage includes profile snapshots, category filters before payload
+access, mixed-size spacing in all directions, priority replacement, preview
+termination and UI callbacks. `npm run test:mutations` also verifies that seven
+deliberate regressions are rejected by the tests.
 
 Payload mappings follow Blizzard's
 [combat-text handler](https://github.com/Gethe/wow-ui-source/blob/18c6d677b605b312f3d813d498404631fb941977/Interface/AddOns/Blizzard_CombatText/Shared/CombatText.lua).

@@ -145,7 +145,12 @@ C_CombatText = namespace
 -- Burst policy bounds widgets; expiry hides all, and reuse resets alpha and size.
 expire()
 issecretvalue = nil
-for i = 1, 2000 do fire("SPELL_DAMAGE_CRIT", 1) end
+ADDON.SetOption("incoming", "maxLines", 64)
+ADDON.SetOption("gains", "maxLines", 64)
+for i = 1, 1000 do
+    fire("SPELL_DAMAGE_CRIT", 1)
+    fire("HEAL_CRIT", "Healer", 1)
+end
 local visible = 0
 for _, fs in ipairs(FONTSTRINGS) do if fs:IsShown() then visible = visible + 1 end end
 expect(visible == 128 and #FONTSTRINGS == 130, "burst allocation was not bounded")

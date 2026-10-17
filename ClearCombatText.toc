@@ -9,4 +9,6 @@
 ## X-Website: https://github.com/Booyaka101/clearcombattext
 ## SavedVariables: ClearCombatTextDB
 
+Options.lua
 ClearCombatText.lua
+Config.lua
