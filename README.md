@@ -107,8 +107,10 @@ also verifies that fourteen deliberate regressions are rejected by the tests.
 
 Payload mappings follow Blizzard's
 [combat-text handler](https://github.com/Gethe/wow-ui-source/blob/18c6d677b605b312f3d813d498404631fb941977/Interface/AddOns/Blizzard_CombatText/Shared/CombatText.lua).
-The headless harness is not a native WoW secret/taint emulator. Forever Beta and
-Midnight in-game verification remains required before release.
+The headless harness is not a native WoW secret/taint emulator. The 0.5.0 beta
+prerelease has not been verified in-game on Forever Beta or Midnight. Native
+verification remains required before a stable release; use 0.4.1 if you need
+the previous stable version.
 
 ## License
 
