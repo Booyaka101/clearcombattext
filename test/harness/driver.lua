@@ -182,6 +182,8 @@ tonumber = function(value)
     return originalTonumber(value)
 end
 pcall = function() error("protected call on combat hot path") end
+CLOCK = CLOCK + 3
+updater.scripts.OnUpdate(updater, 3)
 SHOWN = {}
 fire("SPELL_AURA_START", secret)
 fire("AURA_START", secret)
@@ -192,6 +194,8 @@ expect(#SHOWN == 5, "secret payloads consolidated or dropped")
 expect(SHOWN[1] == "secret display", "reported aura path failed")
 local detector = issecretvalue
 issecretvalue = nil
+CLOCK = CLOCK + 3
+updater.scripts.OnUpdate(updater, 3)
 SHOWN = {}
 fire("SPELL_DAMAGE", secret)
 fire("SPELL_DAMAGE", 123)

@@ -6,6 +6,9 @@
 --
 -- Combat payloads go straight to display unless the client can prove them public.
 
+local _, addon = ...
+local options = addon.NormalizeOptions()
+
 -- ---------------------------------------------------------------------------
 -- event info access
 
@@ -88,7 +91,7 @@ local TEXT_LABELS = {
 local INCOMING = {
     DAMAGE = true, DAMAGE_CRIT = true, SPELL_DAMAGE = true, SPELL_DAMAGE_CRIT = true,
     SPELL_SPLIT_DAMAGE = true, PERIODICAURA_DAMAGE = true, MISS = true, DODGE = true,
-    PARRY = true, EVADE = true, IMMUNE = true, AURA_START_HARMFUL = true,
+    PARRY = true, EVADE = true, IMMUNE = true, AURA_START_HARMFUL = true, HEALTH_LOW = true,
 }
 
 -- Canonical names from Blizzard_CombatText/Shared/CombatText.lua. Keep the old
@@ -138,10 +141,36 @@ local RESOURCE_TYPES = {
 }
 TYPES.ENERGIZE, TYPES.PERIODIC_ENERGIZE = DEFAULT, DEFAULT
 
+local CATEGORIES = {}
+for name in pairs(TYPES) do
+    if name:find("AURA", 1, true) and name ~= "PERIODICAURA_DAMAGE" then CATEGORIES[name] = "auras" end
+end
+for _, name in ipairs({ "PERIODICAURA_DAMAGE", "PERIODICHEAL", "PERIODIC_HEAL", "PERIODIC_HEAL_CRIT", "PERIODIC_HEAL_ABSORB" }) do
+    CATEGORIES[name] = "periodic"
+end
+for name in pairs(RESOURCE_TYPES) do CATEGORIES[name] = "resources" end
+CATEGORIES.RUNE, CATEGORIES.ENERGIZE, CATEGORIES.PERIODIC_ENERGIZE = "resources", "resources", "resources"
+for _, name in ipairs({ "MISS", "DODGE", "PARRY", "EVADE", "IMMUNE", "DEFLECT", "REFLECT",
+    "SPELL_MISS", "SPELL_DODGE", "SPELL_PARRY", "SPELL_EVADE", "SPELL_IMMUNE", "SPELL_DEFLECT", "SPELL_REFLECT", "SPELL_MISFIRE" }) do
+    CATEGORIES[name] = "avoidance"
+end
+CATEGORIES.ENTERING_COMBAT, CATEGORIES.LEAVING_COMBAT = "combat", "combat"
+
+local function allowed(mtype, preview)
+    return (options.enabled or preview) and options.filters[CATEGORIES[mtype]] ~= false
+end
+
+local function priority(mtype, opts)
+    if mtype == "HEALTH_LOW" or mtype == "MANA_LOW" then return 3 end
+    if opts.crit then return 2 end
+    if CATEGORIES[mtype] then return 0 end
+    return 1
+end
+
 -- ---------------------------------------------------------------------------
 -- consolidation: the first hit renders immediately; repeats inside the window
--- update that same line in place ("340" grows into "1020 x3") and refresh its
--- lifetime, so a burst reads as one living number instead of a queue delay.
+-- update that same line in place ("340" grows into "1020 x3") without rewinding
+-- its animation or keeping a continuous stream alive indefinitely.
 -- (defined after render, which it calls)
 
 local WINDOW = 0.45
@@ -150,18 +179,20 @@ local render -- forward-declared: consolidate calls it, defined below
 local function consolidate(now, mtype, amount, opts, key)
     key = key or mtype
     local p = pending[key]
-    if p and p.entry and p.entry.fs and not p.entry.done and (now - p.t) <= WINDOW and amount then
+    if p and p.entry and p.entry.fs and not p.entry.done and (now - p.t) <= WINDOW
+        and (now - p.entry.born) < p.entry.duration and amount then
         p.n = p.n + 1
         p.sum = p.sum + amount
-        p.t = now
         local text = BreakUpLargeNumbers(p.sum) .. " x" .. p.n
         p.entry.fs:SetText(text)
-        p.entry.born = now
+        -- Keep the original animation age. Resetting it makes a consolidated
+        -- line move backwards through newer lines and can keep it alive forever.
         return
     end
     if amount then
         local entry = render(now, mtype, BreakUpLargeNumbers(amount), opts)
         if entry and entry.fs then
+            -- The window starts at the first hit so fresh hits never join an old, faded group.
             pending[key] = { t = now, n = 1, sum = amount, entry = entry }
         end
     end
@@ -178,17 +209,8 @@ updater:Hide()
 
 if type(ClearCombatTextDB) ~= "table" then ClearCombatTextDB = {} end
 local streams = {}
-local DIRECTIONS = { up = { 0, 1 }, down = { 0, -1 }, left = { -1, 0 }, right = { 1, 0 } }
-local POINTS = { CENTER = true, TOP = true, BOTTOM = true, LEFT = true, RIGHT = true,
-    TOPLEFT = true, TOPRIGHT = true, BOTTOMLEFT = true, BOTTOMRIGHT = true }
-
-local function finite(value)
-    return type(value) == "number" and value == value and math.abs(value) < math.huge
-end
-
-local function validPosition(s)
-    return type(s) == "table" and POINTS[s.point] and POINTS[s.relPoint] and finite(s.x) and finite(s.y)
-end
+local DIRECTIONS = addon.Directions
+local validPosition = addon.ValidPosition
 
 local function savedStreams()
     -- WoW restores saved variables after executing addon files, so the load-time
@@ -251,6 +273,7 @@ local function restoreAnchor()
             saved[name] = s
         end
         local anchor = stream.anchor
+        anchor:StopMovingOrSizing()
         anchor:ClearAllPoints()
         if validPosition(s) then
             anchor:SetPoint(s.point, UIParent, s.relPoint, s.x, s.y)
@@ -266,15 +289,15 @@ end
 -- that has displayed secret text hands marked values back from its getters
 -- (live-proven: GetPoint returned <secret string> after SetText(secret)), so the
 -- addon never reads back from a rendered widget — it reuses this clean cache.
-local baseFont, baseFlags
+local baseFont
 
 local function acquire()
     local fs = table.remove(pool)
     if not fs then
         fs = UIParent:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
         fs:SetFontObject("GameFontNormalHuge")
-        local f, _, fl = fs:GetFont()
-        if f and not baseFont then baseFont, baseFlags = f, fl end
+        local f = fs:GetFont()
+        if f and not baseFont then baseFont = f end
     end
     return fs
 end
@@ -284,69 +307,200 @@ local function release(fs)
     table.insert(pool, fs)
 end
 
-local LIFETIME = 1.9
-local RISE = 110
+local previewUntil, previewNext, previewIndex
 
-render = function(now, mtype, text, opts)
-    -- Secret events cannot consolidate. Bound burst allocation and per-frame work.
-    if #active >= MAX_ACTIVE then return nil end
+local function discard(index)
+    local entry = table.remove(active, index)
+    entry.done = true
+    entry.stream.slots[entry.slot] = nil
+    release(entry.fs)
+end
+
+local function expire(now)
+    for i = #active, 1, -1 do
+        if now - active[i].born >= active[i].duration then discard(i) end
+    end
+end
+
+local function clearDisplay()
+    for i = #active, 1, -1 do discard(i) end
+    pending = {}
+    previewUntil = nil
+    updater:Hide()
+end
+
+for _, stream in pairs(streams) do stream.slots = {} end
+
+local function layout(now)
+    local fronts = { incoming = 0, gains = 0 }
+    for i = #active, 1, -1 do
+        local a = active[i]
+        local k = math.max(0, (now - a.born) / a.duration)
+        local distance = k * a.distance
+        local direction = DIRECTIONS[a.stream.direction]
+        local x, y
+        if direction[1] == 0 then
+            -- Newest text stays near the anchor; older text is pushed ahead
+            -- using owned font sizes, never secret-tainted widget measurements.
+            distance = math.max(distance, a.progress or 0, fronts[a.stream.name])
+            a.progress = distance
+            fronts[a.stream.name] = distance + a.height + a.spacing
+            x, y = 0, distance * direction[2]
+        else
+            x, y = distance * direction[1], a.slot * (a.height + a.spacing)
+        end
+        a.fs:ClearAllPoints()
+        a.fs:SetPoint("CENTER", a.stream.anchor, "CENTER", x, y)
+    end
+end
+
+render = function(now, mtype, text, opts, preview)
+    if not allowed(mtype, preview) then return nil end
+    -- Events can arrive before OnUpdate; dead lines must not occupy capacity.
+    expire(now)
     opts = opts or TYPES[mtype] or DEFAULT
     local stream = streams[INCOMING[mtype] and "incoming" or "gains"]
+    local area, importance = options[stream.name], priority(mtype, opts)
+    -- All four demo priority levels sit below every real event category.
+    if preview then importance = importance - 4 end
+    local count, victim = 0, nil
+    for i, entry in ipairs(active) do
+        if entry.stream == stream then count = count + 1 end
+    end
+    if count >= area.maxLines or #active >= MAX_ACTIVE then
+        for i, entry in ipairs(active) do
+            if (count < area.maxLines or entry.stream == stream) and entry.priority < importance
+                and (not victim or entry.priority < active[victim].priority) then victim = i end
+        end
+        if not victim then return nil end
+        discard(victim)
+    end
+    local slot = 0
+    while stream.slots[slot] do slot = slot + 1 end
     local fs = acquire()
     if not fs then return nil end -- guard: stub layer may fail under injection
+    if preview then text = string.format("[Preview] %s", text) end
     fs:SetText(text)
-    fs:SetAlpha(1) -- pooled strings carry the tail of their last fade
-    fs:SetTextColor(opts.color[1], opts.color[2], opts.color[3], opts.dim and 0.75 or 1)
-    if baseFont then fs:SetFont(baseFont, opts.size, baseFlags) end
-    -- our own clean numbers only: after SetText the widget may carry the secret
-    -- marker, and its getters hand back marked values (GetPoint proved it live)
-    local stagger = math.random(-45, 45)
-    local spawnX = stagger
-    fs:ClearAllPoints()
-    fs:SetPoint("CENTER", stream.anchor, "CENTER", spawnX, 0)
-    fs:Show()
-    local entry = { fs = fs, born = now, size = opts.size, fontSize = opts.size, crit = opts.crit, done = false, spawnX = spawnX, stream = stream }
+    fs:SetAlpha(options.opacity)
+    local color = options.customColors and options[stream.name .. "Color"] or opts.color
+    fs:SetTextColor(color[1], color[2], color[3], opts.dim and 0.75 or 1)
+    local size = math.floor(opts.size * options.fontScale)
+    local font = options.font == "sans" and "Fonts\\ARIALN.TTF" or baseFont
+    if font then fs:SetFont(font, size, options.outline) end
+    fs:SetShadowColor(0, 0, 0, options.shadow and 1 or 0)
+    fs:SetShadowOffset(options.shadow and 1 or 0, options.shadow and -1 or 0)
+    -- All rows reserve the largest possible styled height, so mixed-size crits
+    -- cannot overlap adjacent rows or require reading text dimensions.
+    local height = math.ceil(28 * options.fontScale * options.critScale) + 4
+    local entry = { fs = fs, born = now, size = size, fontSize = size, font = font,
+        crit = opts.crit, critScale = options.critScale, done = false, stream = stream,
+        slot = slot, height = height, spacing = area.spacing, duration = area.duration,
+        distance = area.distance, priority = importance, opacity = options.opacity, preview = preview }
+    stream.slots[slot] = true
     active[#active + 1] = entry
+    layout(now)
+    fs:Show()
     updater:Show()
     return entry
 end
 
 updater:SetScript("OnUpdate", function(self, elapsed)
     local now = GetTime()
+    expire(now)
+    if previewUntil then
+        if now >= previewUntil then previewUntil = nil
+        elseif now >= previewNext then
+            previewNext = now + 0.12
+            previewIndex = previewIndex + 1
+            local kinds = { "SPELL_DAMAGE", "HEAL", "PERIODICAURA_DAMAGE", "ENERGIZE", "SPELL_DAMAGE_CRIT", "HEAL_CRIT" }
+            local kind = kinds[(previewIndex - 1) % #kinds + 1]
+            render(now, kind, tostring(100 + previewIndex * 37), nil, true)
+        end
+    end
     for i = #active, 1, -1 do
         local a = active[i]
         local age = now - a.born
-        if age >= LIFETIME then
-            a.done = true
-            release(a.fs)
-            table.remove(active, i)
-        else
-            local k = age / LIFETIME
-            local direction = DIRECTIONS[a.stream.direction]
-            -- no GetPoint read-back: the widget may carry the secret marker and
-            -- its getters return marked values, which SetPoint rejects. We own
-            -- spawnX; the anchor frame never displayed a secret, so it is clean.
-            a.fs:SetPoint("CENTER", a.stream.anchor, "CENTER", a.spawnX + k * RISE * direction[1], k * RISE * direction[2])
-            a.fs:SetAlpha((1 - k) ^ 1.4)
-            if a.crit and baseFont then
-                local pop = 1 + 0.35 * math.max(0, 1 - age * 8)
-                local size = math.floor(a.size * pop)
-                if size ~= a.fontSize then
-                    a.fs:SetFont(baseFont, size, baseFlags)
-                    a.fontSize = size
-                end
+        local k = age / a.duration
+        a.fs:SetAlpha(a.opacity * (1 - k) ^ 1.4)
+        if a.crit and a.font then
+            local pop = 1 + (a.critScale - 1) * math.max(0, 1 - age * 8)
+            local size = math.floor(a.size * pop)
+            if size ~= a.fontSize then
+                a.fs:SetFont(a.font, size, options.outline)
+                a.fontSize = size
             end
         end
     end
+    layout(now)
     -- expired consolidation windows release their claim; the line itself fades
-    -- on its own refreshed lifetime
+    -- on its original lifetime
     for mtype, p in pairs(pending) do
         if (now - p.t) > WINDOW then
             pending[mtype] = nil
         end
     end
-    if #active == 0 then self:Hide() end
+    if #active == 0 and not previewUntil then self:Hide() end
 end)
+
+function addon.CaptureLayout()
+    for _, stream in pairs(streams) do saveAnchor(stream) end
+end
+
+function addon.OnSettingsChanged(layoutChanged)
+    options = addon.GetOptions()
+    clearDisplay()
+    if layoutChanged then restoreAnchor() end
+end
+
+function addon.StopPreview()
+    previewUntil = nil
+    for i = #active, 1, -1 do
+        if active[i].preview then discard(i) end
+    end
+    layout(GetTime())
+    if #active == 0 then updater:Hide() end
+end
+
+function addon.Preview(burst)
+    addon.StopPreview()
+    local now = GetTime()
+    render(now, "SPELL_DAMAGE_CRIT", "4,912", nil, true)
+    render(now, "HEAL_CRIT", "1,208", nil, true)
+    render(now, "SPELL_DAMAGE", "385 x6", nil, true)
+    render(now, "HEALTH_LOW", LOW_HEALTH or "Low health!", nil, true)
+    render(now, "AURA_START", "Clearcasting", nil, true)
+    if burst then
+        previewUntil, previewNext, previewIndex = now + 5, now, 0
+        updater:Show()
+    end
+end
+
+function addon.SetDirection(name, direction)
+    local stream = streams[name]
+    if not stream or not DIRECTIONS[direction] then return false end
+    clearDisplay()
+    stream.direction = direction
+    saveAnchor(stream)
+    return true
+end
+
+function addon.SetAnchorsUnlocked(show, target)
+    for name, stream in pairs(streams) do
+        if not target or target == name then
+            local anchor = stream.anchor
+            anchor:StopMovingOrSizing()
+            anchor:SetShown(show)
+            anchor:EnableMouse(show)
+            if not show then saveAnchor(stream) end
+        end
+    end
+end
+
+function addon.ResetPositions()
+    clearDisplay()
+    ClearCombatTextDB.anchor, ClearCombatTextDB.streams = nil, {}
+    restoreAnchor()
+end
 
 -- ---------------------------------------------------------------------------
 -- the event
@@ -368,6 +522,7 @@ f:SetScript("OnEvent", function(self, event, unit, showVehicle)
         return
     end
     if event == "PLAYER_LOGIN" then
+        options = addon.ReloadOptions()
         restoreAnchor() -- position restores even on clients without C_CombatText
         if C_CombatText == nil then return end
         bindUnit("player")
@@ -403,6 +558,7 @@ f:HookScript("OnEvent", function(self, event, mtype)
     if type(getCurrentEventInfo) ~= "function" then return end
     if issecretvalue and issecretvalue(mtype) then return end
     if type(mtype) ~= "string" then return end
+    if not allowed(mtype) then return end
     local data, a2, a3 = getCurrentEventInfo()
     local opts = TYPES[mtype] or UNKNOWN
     if opts.text then
@@ -452,54 +608,53 @@ end)
 -- slash commands
 
 SLASH_CLEARCOMBATTEXT1 = "/cct"
+SLASH_CLEARCOMBATTEXT2 = "/clearcombattext"
 SlashCmdList.CLEARCOMBATTEXT = function(msg)
     savedStreams()
-    msg = strlower(strtrim(msg or ""))
-    local command, target, direction = msg:match("^(%S+)%s*(%S*)%s*(%S*)$")
+    local raw = strtrim(msg or "")
+    msg = strlower(raw)
+    local command = msg:match("^(%S+)")
+    local _, target, direction = msg:match("^(%S+)%s*(%S*)%s*(%S*)$")
     if command == "anchor" and direction == "" and (target == "" or streams[target]) then
         local show = target ~= "" and not streams[target].anchor:IsShown()
         if target == "" then
             show = not (streams.incoming.anchor:IsShown() and streams.gains.anchor:IsShown())
         end
-        for name, stream in pairs(streams) do
-            if target == "" or target == name then
-                local anchor = stream.anchor
-                if not show then
-                    anchor:StopMovingOrSizing()
-                    anchor:Hide()
-                    anchor:EnableMouse(false)
-                    saveAnchor(stream)
-                else
-                    anchor:Show()
-                    anchor:EnableMouse(true)
-                end
-            end
-        end
+        addon.SetAnchorsUnlocked(show, target ~= "" and target or nil)
         print("ClearCombatText: drag each box; repeat the anchor command to lock.")
     elseif command == "direction" and streams[target] and DIRECTIONS[direction] then
-        local stream = streams[target]
-        stream.direction = direction
-        saveAnchor(stream)
-        ClearCombatTextDB.streams[target].direction = direction
+        addon.SetDirection(target, direction)
         print("ClearCombatText: " .. target .. " scrolls " .. direction .. ".")
     elseif msg == "reset" then
-        ClearCombatTextDB.anchor = nil
-        ClearCombatTextDB.streams = {}
-        restoreAnchor()
+        addon.ResetPositions()
         print("ClearCombatText: positions and directions reset.")
     elseif msg == "test" then
-        local now = GetTime()
-        render(now, "SPELL_DAMAGE_CRIT", "4,912")
-        render(now, "HEAL_CRIT", "1,208")
-        render(now, "SPELL_DAMAGE", "385 x6")
-        render(now, "HEALTH_LOW", LOW_HEALTH or "Low health!")
-        render(now, "AURA_START", "Clearcasting")
+        addon.Preview()
+    elseif msg == "burst" then
+        addon.Preview(true)
+    elseif msg == "config" then
+        addon.ToggleConfig()
+    elseif msg == "toggle" then
+        addon.SetOption(nil, "enabled", not options.enabled)
+        print("ClearCombatText: " .. (options.enabled and "enabled." or "disabled."))
+    elseif command == "preset" and addon.ApplyPreset(target) then
+        print("ClearCombatText: applied " .. target .. " preset; positions retained.")
+    elseif command == "profile" then
+        local action, name = raw:match("^%S+%s+(%S+)%s+(.+)$")
+        action = action and strlower(action)
+        local methods = { save = addon.SaveProfile, load = addon.LoadProfile, delete = addon.DeleteProfile }
+        if action and methods[action] then
+            local _, message = methods[action](name)
+            print("ClearCombatText: " .. message)
+        else
+            print("ClearCombatText profiles: " .. table.concat(addon.ProfileNames(), ", "))
+        end
     elseif msg == "blizz" then
         -- toggle Blizzard's own floating combat text
         local on = GetCVarBool("enableFloatingCombatText")
         SetCVar("enableFloatingCombatText", not on)
         print("ClearCombatText: Blizzard floating combat text " .. (on and "OFF." or "ON."))
     else
-        print("ClearCombatText: /cct test, /cct anchor [incoming|gains], /cct direction <incoming|gains> <up|down|left|right>, /cct reset, /cct blizz. Active: " .. #active)
+        print("ClearCombatText: /cct config, /cct test, /cct burst, /cct toggle, /cct anchor [incoming|gains], /cct direction <incoming|gains> <up|down|left|right>, /cct preset <readable|minimal|healer>, /cct profile <save|load|delete|list> [name], /cct reset, /cct blizz. Active: " .. #active)
     end
 end
